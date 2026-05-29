@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviator - Admin Panel</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 20px;
+        }
+        .container { max-width: 500px; margin: auto; }
+        .card {
+            background: #1e293b;
+            border-radius: 32px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            border-radius: 60px;
+            border: none;
+            font-size: 16px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        button:hover { background: #2563eb; }
+        .danger-btn { background: #ef4444; }
+        .danger-btn:hover { background: #dc2626; }
+        .success-btn { background: #10b981; }
+        .log {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 20px;
+            font-family: monospace;
+            font-size: 13px;
+            margin-top: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        h2, h3 { margin-top: 0; }
+        .stats { font-size: 14px; background: #0f172a; padding: 10px; border-radius: 20px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2>🎮 ADMIN CONTROL PANEL</h2>
+        <div>
+            <label>📌 Round Type:</label>
+            <select id="roundType">
+                <option value="random">Random (1.5x - 10x)</option>
+                <option value="custom">Custom Multiplier</option>
+            </select>
+            
+            <input type="number" id="customMultiplier" placeholder="Custom multiplier (e.g. 3.5)" step="0.1">
+            
+            <label>⏱️ Countdown Seconds:</label>
+            <input type="number" id="countdownSeconds" placeholder="Seconds before round start" value="5" min="3" max="15">
+            
+            <button id="startCountdownBtn" class="success-btn">⏰ START 5 SEC COUNTDOWN</button>
+            <button id="resetAllBtn" class="danger-btn">🔄 RESET ALL PLAYERS (20000 coin)</button>
+            <button id="viewPlayersBtn" class="stats">👥 VIEW ONLINE PLAYERS</button>
+            
+            <div id="adminLog" class="log">
+                📡 Ready - Click countdown to start
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyCVH6du7PQIvT3Y5nnuWeUo3MU3-30KOok",
+        authDomain: "aviator-realtime.firebaseapp.com",
+        databaseURL: "https://aviator-realtime-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "aviator-realtime",
+        storageBucket: "aviator-realtime.firebasestorage.app",
+        messagingSenderId: "740588905160",
+        appId: "1:740588905160:web:94cb8cd70cf1abca7ebbfd"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const roundType = document.getElementById('roundType');
+    const customMultiplier = document.getElementById('customMultiplier');
+    const countdownSeconds = document.getElementById('countdownSeconds');
+    const startCountdownBtn = document.getElementById('startCountdownBtn');
+    const resetBtn = document.getElementById('resetAllBtn');
+    const viewPlayersBtn = document.getElementById('viewPlayersBtn');
+    const logDiv = document.getElementById('adminLog');
+
+    function addLog(msg) {
+        const time = new Date().toLocaleTimeString();
+        logDiv.innerHTML = `[${time}] ${msg}<br>` + logDiv.innerHTML;
+    }
+
+    async function startCountdown() {
+        let target = 2.0;
+        if(roundType.value === 'random') {
+            target = parseFloat((1.5 + Math.random() * 8.5).toFixed(2));
+        } else {
+            let custom = parseFloat(customMultiplier.value);
+            if(isNaN(custom) || custom <= 1.0) {
+                addLog("❌ Invalid custom multiplier! Must be > 1.0");
+                return;
+            }
+            target = custom;
+        }
+        
+        let countdown = parseInt(countdownSeconds.value) || 5;
+        
+        // Set countdown phase
+        await db.ref('game/currentRound').set({
+            id: Date.now(),
+            active: false,
+            status: 'countdown',
+            target: target,
+            countdown: countdown
+        });
+        
+        addLog(`⏰ Countdown started: ${countdown} seconds | Target: ${target}x`);
+        
+        // Countdown timer
+        for(let i = countdown; i >= 0; i--) {
+            await db.ref('game/currentRound/countdown').set(i);
+            if(i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+        
+        // Start round
+        const roundId = Date.now();
+        await db.ref('game/currentRound').set({
+            id: roundId,
+            active: true,
+            status: 'live',
+            target: target,
+            startTime: roundId
+        });
+        
+        addLog(`🚀 Round ${roundId} started! Target: ${target}x`);
+        
+        // Auto crash after 15 seconds max (safety)
+        setTimeout(async () => {
+            const snap = await db.ref('game/currentRound/active').once('value');
+            if(snap.val() === true) {
+                await db.ref('game/currentRound/active').set(false);
+                addLog(`💥 Round auto-crashed (timeout)`);
+            }
+        }, 15000);
+    }
+
+    resetBtn.onclick = async () => {
+        if(confirm("⚠️ Reset all players to 20000 coins?")) {
+            await db.ref('users').remove();
+            addLog("🔄 All players reset");
+        }
+    };
+
+    viewPlayersBtn.onclick = async () => {
+        const snapshot = await db.ref('users').once('value');
+        const users = snapshot.val();
+        if(!users) {
+            addLog("No players yet");
+            return;
+        }
+        let count = Object.keys(users).length;
+        addLog(`👥 ${count} players online`);
+    };
+
+    startCountdownBtn.onclick = startCountdown;
+
+    // Initialize
+    db.ref('game/currentRound').once('value').then(snap => {
+        if(!snap.exists()) {
+            db.ref('game/currentRound').set({
+                id: 0,
+                active: false,
+                status: 'waiting',
+                target: 2.0
+            });
+        }
+    });
+</script>
+</body>
+</html>
