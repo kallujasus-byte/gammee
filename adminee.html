@@ -1,25 +1,533 @@
-// placeBets function mein yeh check add karo:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Aviator - Admin Panel Pro</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-async function placeBets() {
-    if(!canPlaceBet) { showToast("⏰ Bet only during countdown!", true); return; }
-    if(roundActive) { showToast("Round already live!", true); return; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 28px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title span {
+            background: #f97316;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 12px;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 14px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            color: white;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        button:active { transform: scale(0.98); }
+
+        .btn-primary { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-warning { background: #f97316; color: white; }
+        .btn-secondary { background: #3b82f6; color: white; }
+        .btn-dark { background: #334155; color: white; }
+
+        .log {
+            background: #0f172a;
+            border-radius: 16px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 16px;
+        }
+
+        .log-entry {
+            padding: 6px 0;
+            border-bottom: 1px solid #1e293b;
+            color: #94a3b8;
+        }
+
+        .log-entry.info { color: #3b82f6; }
+        .log-entry.success { color: #10b981; }
+        .log-entry.error { color: #ef4444; }
+        .log-entry.warning { color: #f97316; }
+
+        .users-table {
+            width: 100%;
+            font-size: 12px;
+            margin-top: 12px;
+            border-collapse: collapse;
+        }
+
+        .users-table th, .users-table td {
+            padding: 10px 6px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+
+        .users-table th {
+            color: #94a3b8;
+            font-weight: normal;
+        }
+
+        .balance-high { color: #10b981; font-weight: bold; }
+        .balance-medium { color: #fbbf24; }
+        .balance-low { color: #ef4444; }
+
+        .refresh-btn {
+            background: #475569;
+            padding: 8px;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-box {
+            flex: 1;
+            background: #0f172a;
+            border-radius: 16px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #f97316;
+        }
+
+        hr {
+            border-color: #334155;
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- Main Control Card -->
+    <div class="card">
+        <div class="card-title">
+            🎮 ADMIN CONTROL PANEL
+            <span>PRO</span>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row">
+            <div class="stat-box">
+                <div>🎲 Round Status</div>
+                <div class="stat-number" id="roundStatusBadge">Idle</div>
+            </div>
+            <div class="stat-box">
+                <div>👥 Players</div>
+                <div class="stat-number" id="playerCount">0</div>
+            </div>
+        </div>
+
+        <!-- Round Settings -->
+        <div class="input-group">
+            <label>📌 Round Type</label>
+            <select id="roundType">
+                <option value="random">Random Multiplier (1.5x - 10x)</option>
+                <option value="custom">Custom Multiplier</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>🎯 Target Multiplier (Custom)</label>
+            <input type="number" id="customMultiplier" placeholder="e.g., 4.57" step="0.01">
+        </div>
+
+        <div class="input-group">
+            <label>⏱️ Countdown Seconds</label>
+            <input type="number" id="countdownSeconds" value="5" min="3" max="15">
+        </div>
+
+        <div class="input-group">
+            <label>💰 Max Bet Limit (Per Bet)</label>
+            <input type="number" id="maxBetLimit" value="300000" step="10000">
+        </div>
+
+        <!-- Action Buttons -->
+        <button class="btn-primary" id="startCountdownBtn">⏰ START COUNTDOWN</button>
+        
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="btn-warning" id="instantCrashBtn" style="flex:1;">💥 INSTANT CRASH</button>
+            <button class="btn-danger" id="resetAllBtn" style="flex:1;">🔄 RESET ALL</button>
+        </div>
+
+        <!-- Log -->
+        <div class="log" id="adminLog">
+            <div class="log-entry info">📡 Admin Panel Ready</div>
+        </div>
+    </div>
+
+    <!-- Users Card -->
+    <div class="card">
+        <div class="card-title">
+            👥 PLAYERS & BALANCE
+            <button class="refresh-btn" id="refreshUsersBtn" style="width: auto; padding: 4px 12px; margin: 0;">⟳ Refresh</button>
+        </div>
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table class="users-table" id="usersTable">
+                <thead>
+                    <tr><th>Player ID</th><th>Balance</th><th>Status</th></tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr><td colspan="3" style="text-align: center;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 12px; font-size: 11px; color: #64748b;">
+            ⚠️ Max Bet Limit: <span id="maxBetDisplay">300,000</span> per bet
+        </div>
+    </div>
+</div>
+
+<script>
+    // Firebase Config
+    const firebaseConfig = {
+        apiKey: "AIzaSyCVH6du7PQIvT3Y5nnuWeUo3MU3-30KOok",
+        authDomain: "aviator-realtime.firebaseapp.com",
+        databaseURL: "https://aviator-realtime-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "aviator-realtime",
+        storageBucket: "aviator-realtime.firebasestorage.app",
+        messagingSenderId: "740588905160",
+        appId: "1:740588905160:web:94cb8cd70cf1abca7ebbfd"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // DOM Elements
+    const roundType = document.getElementById('roundType');
+    const customMultiplier = document.getElementById('customMultiplier');
+    const countdownSeconds = document.getElementById('countdownSeconds');
+    const maxBetLimit = document.getElementById('maxBetLimit');
+    const startCountdownBtn = document.getElementById('startCountdownBtn');
+    const instantCrashBtn = document.getElementById('instantCrashBtn');
+    const resetAllBtn = document.getElementById('resetAllBtn');
+    const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+    const adminLog = document.getElementById('adminLog');
+    const roundStatusBadge = document.getElementById('roundStatusBadge');
+    const playerCount = document.getElementById('playerCount');
+    const usersTableBody = document.getElementById('usersTableBody');
+    const maxBetDisplay = document.getElementById('maxBetDisplay');
+
+    let isRoundActive = false;
+    let currentRoundRef = null;
+
+    function addLog(msg, type = 'info') {
+        const logDiv = document.createElement('div');
+        logDiv.className = `log-entry ${type}`;
+        const time = new Date().toLocaleTimeString();
+        logDiv.innerHTML = `[${time}] ${msg}`;
+        adminLog.insertBefore(logDiv, adminLog.firstChild);
+        
+        // Keep only last 50 logs
+        while(adminLog.children.length > 50) {
+            adminLog.removeChild(adminLog.lastChild);
+        }
+    }
+
+    function updateRoundStatus(status) {
+        const statusMap = {
+            'idle': '⏸️ Idle',
+            'countdown': '⏰ Countdown',
+            'live': '✈️ LIVE',
+            'crashed': '💥 Crashed'
+        };
+        roundStatusBadge.innerText = statusMap[status] || status;
+        roundStatusBadge.style.color = status === 'live' ? '#10b981' : (status === 'crashed' ? '#ef4444' : '#fbbf24');
+    }
+
+    async function loadUsers() {
+        try {
+            const snapshot = await db.ref('users').once('value');
+            const users = snapshot.val();
+            if(!users) {
+                usersTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">No players yet</td></tr>';
+                playerCount.innerText = '0';
+                return;
+            }
+            
+            const userList = Object.entries(users).map(([id, data]) => ({
+                id: id.substring(0, 12) + '...',
+                fullId: id,
+                balance: data.balance || 20000
+            })).sort((a,b) => b.balance - a.balance);
+            
+            playerCount.innerText = userList.length;
+            
+            usersTableBody.innerHTML = userList.map(user => {
+                let balanceClass = '';
+                if(user.balance >= 50000) balanceClass = 'balance-high';
+                else if(user.balance >= 10000) balanceClass = 'balance-medium';
+                else balanceClass = 'balance-low';
+                
+                return `
+                    <tr>
+                        <td title="${user.fullId}">${user.id}</td>
+                        <td class="${balanceClass}">₹${user.balance.toLocaleString()}</td>
+                        <td>${user.balance >= 50000 ? '🐋 Whale' : (user.balance >= 10000 ? '🎮 Player' : '🆕 New')}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch(e) {
+            addLog(`Error loading users: ${e.message}`, 'error');
+        }
+    }
+
+    async function instantCrash() {
+        if(!isRoundActive) {
+            addLog("❌ No active round to crash!", 'error');
+            return;
+        }
+        
+        try {
+            // Get current round data
+            const snap = await db.ref('game/currentRound').once('value');
+            const round = snap.val();
+            
+            if(round && round.active === true) {
+                // Set active to false - this will trigger crash on user side
+                await db.ref('game/currentRound/active').set(false);
+                await db.ref('game/currentRound/status').set('crashed');
+                addLog(`💥 MANUAL CRASH triggered! Round ended instantly.`, 'warning');
+                updateRoundStatus('crashed');
+                isRoundActive = false;
+            }
+        } catch(e) {
+            addLog(`Crash failed: ${e.message}`, 'error');
+        }
+    }
+
+    async function startCountdown() {
+        if(isRoundActive) {
+            addLog("⚠️ Round already active! Wait for it to end or crash manually.", 'warning');
+            return;
+        }
+        
+        let target = 2.0;
+        if(roundType.value === 'random') {
+            // Random between 1.5 and 10.0 with 2 decimal places
+            target = parseFloat((1.5 + Math.random() * 8.5).toFixed(2));
+        } else {
+            let custom = parseFloat(customMultiplier.value);
+            if(isNaN(custom) || custom <= 1.0) {
+                addLog("❌ Invalid custom multiplier! Must be > 1.0", 'error');
+                return;
+            }
+            target = custom;
+        }
+        
+        let countdown = parseInt(countdownSeconds.value) || 5;
+        let maxBet = parseInt(maxBetLimit.value) || 300000;
+        
+        // Save max bet limit to database
+        await db.ref('game/settings').set({ maxBet: maxBet });
+        maxBetDisplay.innerText = maxBet.toLocaleString();
+        
+        addLog(`⏰ Starting countdown: ${countdown} seconds | Target: ${target.toFixed(2)}x | Max Bet: ₹${maxBet.toLocaleString()}`, 'info');
+        updateRoundStatus('countdown');
+        
+        // Set countdown phase
+        await db.ref('game/currentRound').set({
+            id: Date.now(),
+            active: false,
+            status: 'countdown',
+            target: target,
+            countdown: countdown,
+            startTime: Date.now()
+        });
+        
+        // Countdown loop
+        for(let i = countdown; i >= 0; i--) {
+            await db.ref('game/currentRound/countdown').set(i);
+            if(i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+        
+        // Start round with EXACT target multiplier
+        const roundId = Date.now();
+        await db.ref('game/currentRound').set({
+            id: roundId,
+            active: true,
+            status: 'live',
+            target: target,  // Exact target like 4.57
+            startTime: roundId
+        });
+        
+        isRoundActive = true;
+        addLog(`🚀 ROUND STARTED! Target: ${target.toFixed(2)}x | Round ID: ${roundId}`, 'success');
+        updateRoundStatus('live');
+        
+        // Auto crash timer - safety if game gets stuck (max 15 seconds)
+        setTimeout(async () => {
+            const snap = await db.ref('game/currentRound/active').once('value');
+            if(snap.val() === true) {
+                await db.ref('game/currentRound/active').set(false);
+                await db.ref('game/currentRound/status').set('crashed');
+                addLog(`⏱️ Auto-crash triggered (timeout)`, 'warning');
+                isRoundActive = false;
+                updateRoundStatus('crashed');
+            }
+        }, 15000);
+        
+        // Listen for round end
+        const roundListener = db.ref('game/currentRound/active').on('value', (snap) => {
+            if(snap.val() === false && isRoundActive === true) {
+                isRoundActive = false;
+                updateRoundStatus('crashed');
+                addLog(`💥 Round CRASHED at target multiplier`, 'warning');
+                roundListener && db.ref('game/currentRound/active').off('value', roundListener);
+            }
+        });
+    }
+
+    async function resetAllPlayers() {
+        if(confirm("⚠️ WARNING: This will reset ALL players to 20000 coins!\nAre you sure?")) {
+            await db.ref('users').remove();
+            addLog("🔄 All players reset to 20000 coins", 'success');
+            await loadUsers();
+        }
+    }
+
+    // Update max bet limit in user panel via settings
+    async function updateMaxBetSettings() {
+        let maxBet = parseInt(maxBetLimit.value) || 300000;
+        await db.ref('game/settings').set({ maxBet: maxBet });
+        maxBetDisplay.innerText = maxBet.toLocaleString();
+        addLog(`💰 Max bet limit updated to ₹${maxBet.toLocaleString()}`, 'info');
+    }
+
+    // Listen for round status changes
+    db.ref('game/currentRound/active').on('value', (snap) => {
+        if(snap.val() === true) {
+            isRoundActive = true;
+            updateRoundStatus('live');
+        } else if(snap.val() === false && isRoundActive === true) {
+            isRoundActive = false;
+            updateRoundStatus('crashed');
+        }
+    });
+
+    db.ref('game/currentRound/status').on('value', (snap) => {
+        const status = snap.val();
+        if(status === 'countdown') updateRoundStatus('countdown');
+        if(status === 'crashed') updateRoundStatus('crashed');
+        if(status === 'waiting') updateRoundStatus('idle');
+    });
+
+    // Event Listeners
+    startCountdownBtn.onclick = startCountdown;
+    instantCrashBtn.onclick = instantCrash;
+    resetAllBtn.onclick = resetAllPlayers;
+    refreshUsersBtn.onclick = loadUsers;
+    maxBetLimit.onchange = updateMaxBetSettings;
+
+    // Initialize
+    async function init() {
+        await loadUsers();
+        
+        // Load settings
+        const settingsSnap = await db.ref('game/settings').once('value');
+        if(settingsSnap.exists()) {
+            const settings = settingsSnap.val();
+            if(settings.maxBet) {
+                maxBetLimit.value = settings.maxBet;
+                maxBetDisplay.innerText = settings.maxBet.toLocaleString();
+            }
+        }
+        
+        // Check current round state
+        const roundSnap = await db.ref('game/currentRound').once('value');
+        if(!roundSnap.exists()) {
+            await db.ref('game/currentRound').set({
+                id: 0,
+                active: false,
+                status: 'waiting',
+                target: 2.0
+            });
+            addLog("⚙️ Initialized game state", 'info');
+        } else {
+            const round = roundSnap.val();
+            if(round.active === true) isRoundActive = true;
+            updateRoundStatus(round.status || 'idle');
+        }
+        
+        addLog("✅ Admin Panel Ready! Max bet limit active.", 'success');
+    }
     
-    // 🔥 NEW: Get max bet limit from Firebase
-    let maxBet = 300000;
-    const settingsSnap = await db.ref('game/settings/maxBet').once('value');
-    if(settingsSnap.exists()) maxBet = settingsSnap.val();
-    
-    let small = parseInt(smallBetInput.value) || 0;
-    let big = parseInt(bigBetInput.value) || 0;
-    
-    // 🔥 NEW: Check max bet limit
-    if(small > maxBet) { showToast(`Small bet cannot exceed ₹${maxBet.toLocaleString()}!`, true); return; }
-    if(big > maxBet) { showToast(`Big bet cannot exceed ₹${maxBet.toLocaleString()}!`, true); return; }
-    
-    if(small <= 0 && big <= 0) { showToast("Enter at least one bet!", true); return; }
-    
-    let total = small + big;
-    if(total > balance) { showToast("Insufficient balance!", true); return; }
-    
-    // Rest of the code...
-}
+    init();
+
+    // Auto refresh users every 10 seconds
+    setInterval(loadUsers, 10000);
+</script>
+</body>
+</html>
